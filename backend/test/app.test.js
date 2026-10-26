@@ -39,6 +39,26 @@ test('faz upload, lista e baixa documentos, tratando erros esperados', async (co
   assert.equal(missingFileResponse.status, 400);
   assert.equal((await missingFileResponse.json()).error.code, 'FILE_REQUIRED');
 
+  const invalidUploadResponse = await fetch(`${baseUrl}/upload`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ file: 'not multipart' }),
+  });
+  assert.equal(invalidUploadResponse.status, 400);
+  assert.equal((await invalidUploadResponse.json()).error.code, 'INVALID_UPLOAD');
+
+  const excessiveFieldsForm = new FormData();
+  for (let index = 0; index < 11; index += 1) {
+    excessiveFieldsForm.append(`field-${index}`, 'ignored');
+  }
+  excessiveFieldsForm.append('file', new Blob(['content']), 'excessive-fields.txt');
+  const excessiveFieldsResponse = await fetch(`${baseUrl}/upload`, {
+    method: 'POST',
+    body: excessiveFieldsForm,
+  });
+  assert.equal(excessiveFieldsResponse.status, 400);
+  assert.equal((await excessiveFieldsResponse.json()).error.code, 'INVALID_UPLOAD');
+
   const oversizedForm = new FormData();
   oversizedForm.append('file', new Blob(['x'.repeat(33)]), 'large.txt');
   const oversizedResponse = await fetch(`${baseUrl}/upload`, {
@@ -62,6 +82,9 @@ test('faz upload, lista e baixa documentos, tratando erros esperados', async (co
   assert.equal(document.size, Buffer.byteLength(content));
   assert.equal(document.owner, 'test-owner');
   assert.match(document.id, /^[0-9a-f-]{36}$/i);
+  const [storedFilename] = await fs.readdir(storageDirectory);
+  assert.match(storedFilename, /^[0-9a-f-]{36}$/i);
+  assert.notEqual(storedFilename, document.originalName);
 
   const listResponse = await fetch(`${baseUrl}/documents`);
   assert.deepEqual((await listResponse.json()).documents, [document]);
@@ -83,7 +106,6 @@ test('faz upload, lista e baixa documentos, tratando erros esperados', async (co
     'DOCUMENT_NOT_FOUND',
   );
 
-  const [storedFilename] = await fs.readdir(storageDirectory);
   await fs.unlink(path.join(storageDirectory, storedFilename));
   const missingStoredFileResponse = await fetch(
     `${baseUrl}/documents/${document.id}/download`,

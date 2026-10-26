@@ -5,12 +5,20 @@ const { maxUploadBytes, storageDirectory } = require('../config/documentStorage'
 const documentController = require('../controllers/documentController');
 
 const router = express.Router();
+const multipartLimits = {
+  fileSize: maxUploadBytes,
+  files: 1,
+  fields: 10,
+  fieldNameSize: 100,
+  fieldSize: 1024,
+  parts: 11,
+};
 const upload = multer({
   storage: multer.diskStorage({
     destination: storageDirectory,
     filename: (req, file, callback) => callback(null, randomUUID()),
   }),
-  limits: { fileSize: maxUploadBytes },
+  limits: multipartLimits,
 });
 
 function parseSingleFile(req, res, next) {
@@ -29,7 +37,11 @@ function parseSingleFile(req, res, next) {
       return next(error);
     }
 
-    error.invalidUpload = !error.code || !error.code.startsWith('E');
+    if (error.code?.startsWith('E')) {
+      error.uploadStorageFailure = true;
+    } else {
+      error.invalidUpload = true;
+    }
     next(error);
   });
 }

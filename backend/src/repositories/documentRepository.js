@@ -1,3 +1,7 @@
+const { access, unlink } = require('node:fs/promises');
+const path = require('node:path');
+const { storageDirectory } = require('../config/documentStorage');
+
 const documentsById = new Map();
 
 function toPublicDocument(document) {
@@ -10,10 +14,24 @@ function toPublicDocument(document) {
   };
 }
 
-function create(document, storageFilename) {
+async function create(document, storageFilename) {
   const record = { ...document, storageFilename };
-  documentsById.set(record.id, record);
-  return toPublicDocument(record);
+  try {
+    const publicDocument = toPublicDocument(record);
+    documentsById.set(record.id, record);
+    return publicDocument;
+  } catch (error) {
+    documentsById.delete(record.id);
+    try {
+      await unlink(path.join(storageDirectory, storageFilename));
+    } catch (cleanupError) {
+      throw new AggregateError(
+        [error, cleanupError],
+        'Não foi possível registrar o documento nem remover o arquivo.',
+      );
+    }
+    throw error;
+  }
 }
 
 function findAll() {
@@ -32,8 +50,15 @@ function findById(id) {
   };
 }
 
+async function getFilePath(storageFilename) {
+  const filePath = path.join(storageDirectory, storageFilename);
+  await access(filePath);
+  return filePath;
+}
+
 module.exports = {
   create,
   findAll,
   findById,
+  getFilePath,
 };

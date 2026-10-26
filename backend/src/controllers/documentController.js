@@ -6,8 +6,9 @@ async function upload(req, res) {
   res.status(201).json({ document });
 }
 
-function list(req, res) {
-  res.status(200).json({ documents: documentService.listDocuments() });
+async function list(req, res) {
+  const documents = await documentService.listDocuments();
+  res.status(200).json({ documents });
 }
 
 function encodeFilename(filename) {

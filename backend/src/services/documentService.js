@@ -1,19 +1,10 @@
 const { randomUUID } = require('node:crypto');
-const { access, unlink } = require('node:fs/promises');
-const path = require('node:path');
 const documentRepository = require('../repositories/documentRepository');
+const { defaultDocumentOwner } = require('../config/documentStorage');
 const {
-  defaultDocumentOwner,
-  storageDirectory,
-} = require('../config/documentStorage');
-
-class DocumentServiceError extends Error {
-  constructor(code) {
-    super(code);
-    this.name = 'DocumentServiceError';
-    this.code = code;
-  }
-}
+  DocumentServiceError,
+  executeDocumentOperation,
+} = require('./documentServiceError');
 
 async function createDocument(uploadedFile) {
   if (!uploadedFile) {
@@ -28,33 +19,33 @@ async function createDocument(uploadedFile) {
     owner: defaultDocumentOwner,
   };
 
-  try {
-    return documentRepository.create(document, uploadedFile.filename);
-  } catch (error) {
-    await unlink(path.join(storageDirectory, uploadedFile.filename)).catch(() => {});
-    throw error;
-  }
+  return executeDocumentOperation(
+    () => documentRepository.create(document, uploadedFile.filename),
+    'UPLOAD_FAILED',
+  );
 }
 
-function listDocuments() {
-  return documentRepository.findAll();
+async function listDocuments() {
+  return executeDocumentOperation(
+    () => documentRepository.findAll(),
+    'DOCUMENT_LIST_FAILED',
+  );
 }
 
 async function getDocumentForDownload(id) {
-  const storedDocument = documentRepository.findById(id);
+  const storedDocument = await executeDocumentOperation(
+    () => documentRepository.findById(id),
+    'DOWNLOAD_FAILED',
+  );
   if (!storedDocument) {
     throw new DocumentServiceError('DOCUMENT_NOT_FOUND');
   }
 
-  const filePath = path.join(storageDirectory, storedDocument.storageFilename);
-  try {
-    await access(filePath);
-  } catch (error) {
-    if (error.code === 'ENOENT') {
-      throw new DocumentServiceError('FILE_NOT_FOUND');
-    }
-    throw new DocumentServiceError('DOWNLOAD_FAILED');
-  }
+  const filePath = await executeDocumentOperation(
+    () => documentRepository.getFilePath(storedDocument.storageFilename),
+    'DOWNLOAD_FAILED',
+    { ENOENT: 'FILE_NOT_FOUND' },
+  );
 
   return {
     document: storedDocument.document,
@@ -63,7 +54,6 @@ async function getDocumentForDownload(id) {
 }
 
 module.exports = {
-  DocumentServiceError,
   createDocument,
   getDocumentForDownload,
   listDocuments,
